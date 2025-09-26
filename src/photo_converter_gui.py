@@ -187,8 +187,14 @@ class PhotoConverterGUI:
         
         # Initial log message
         self.log_message("Photo Converter GUI ready!")
+        supported_formats = ", ".join([ext[1:].upper() for ext in sorted(self.converter.SUPPORTED_FORMATS.keys())])
+        self.log_message(f"Supported formats: {supported_formats}")
+        
         if not self.converter.SUPPORTED_FORMATS.get('.heic'):
-            self.log_message("Note: HEIC support not available. Install pyheif for HEIC support.")
+            self.log_message("\nHEIC support not available (iPhone photos may not be processed)")
+            self.log_message("To add HEIC support: Tools → Install Dependencies")
+        else:
+            self.log_message("\nHEIC support enabled - iPhone photos supported!")
     
     def get_supported_formats(self):
         """Get list of supported output formats"""
@@ -235,8 +241,42 @@ class PhotoConverterGUI:
             self.batch_mode.set(True)
             self.update_mode_display()
             # Count images in folder for preview
-            image_files = self.converter.get_image_files(Path(folder))
-            self.log_message(f"Selected folder: {Path(folder).name} ({len(image_files)} images found)")
+            folder_path = Path(folder)
+            self.log_message(f"Selected folder: {folder_path}")
+            
+            # Get detailed file analysis
+            image_files = self.converter.get_image_files(folder_path)
+            
+            # Also check for HEIC files if not supported
+            heic_files = list(folder_path.glob("*.heic")) + list(folder_path.glob("*.HEIC")) + \
+                        list(folder_path.glob("*.heif")) + list(folder_path.glob("*.HEIF"))
+            
+            self.log_message(f"Found {len(image_files)} supported image files")
+            
+            if heic_files and not self.converter.SUPPORTED_FORMATS.get('.heic'):
+                self.log_message(f"Found {len(heic_files)} HEIC files (not supported without pyheif)")
+                self.log_message("Install HEIC support: Tools → Install Dependencies")
+            elif heic_files:
+                self.log_message(f"HEIC files will be included in processing")
+            
+            if not image_files and not heic_files:
+                self.log_message("No supported image files found in this folder")
+                self.log_message("Supported formats: " + ", ".join(self.converter.SUPPORTED_FORMATS.keys()))
+                
+                # Show what files ARE in the folder
+                all_files = [f for f in folder_path.iterdir() if f.is_file()]
+                if all_files:
+                    self.log_message(f"Found {len(all_files)} files total, but none are supported image formats")
+            else:
+                # Show breakdown by file type
+                file_types = {}
+                for f in image_files:
+                    ext = f.suffix.lower()
+                    file_types[ext] = file_types.get(ext, 0) + 1
+                
+                if file_types:
+                    breakdown = ", ".join([f"{count} {ext[1:].upper()}" for ext, count in sorted(file_types.items())])
+                    self.log_message(f"File types: {breakdown}")
     
     def select_output(self):
         """Select output file or folder"""

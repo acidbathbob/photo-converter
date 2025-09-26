@@ -11,6 +11,7 @@ This is a Python-based photo conversion tool that supports converting images bet
 ### Core Components
 - **PhotoConverter Class**: Main conversion engine that handles format detection, image processing, and batch operations
 - **CLI Interface**: Click-based command-line interface supporting both single file and batch conversion
+- **GUI Interface**: Tkinter-based graphical user interface with file dialogs, progress tracking, and real-time logging
 - **HEIC Support**: Optional HEIC/HEIF support via pyheif library with graceful fallback
 
 ### Key Design Patterns
@@ -24,6 +25,12 @@ This is a Python-based photo conversion tool that supports converting images bet
 ### Install Dependencies
 ```bash
 pip install -r requirements.txt
+```
+
+### Install Core Dependencies (without HEIC)
+If HEIC support installation fails, install core dependencies:
+```bash
+pip install Pillow click tqdm
 ```
 
 ### Install HEIC Support (Fedora)
@@ -52,6 +59,21 @@ python src/photo_converter.py input.jpg output.jpg --quality 85 --resize 800x600
 python examples/heic_to_jpg.py photo.heic
 ```
 
+### Launch GUI Application
+```bash
+python launch_gui.py
+```
+
+### Run GUI Demo with Test Images
+```bash
+python examples/gui_demo.py
+```
+
+### Launch GUI Directly
+```bash
+python src/photo_converter_gui.py
+```
+
 ### Testing
 The README mentions running tests with `python -m pytest tests/` but no test directory currently exists.
 
@@ -76,9 +98,12 @@ The README mentions running tests with `python -m pytest tests/` but no test dir
 
 ## Project Structure
 ```
-src/photo_converter.py    # Main conversion logic and CLI
-examples/heic_to_jpg.py   # HEIC conversion example
-requirements.txt          # Python dependencies
+src/photo_converter.py       # Main conversion logic and CLI
+src/photo_converter_gui.py   # GUI application
+examples/heic_to_jpg.py      # HEIC conversion example
+examples/gui_demo.py         # GUI demo with test images
+launch_gui.py               # GUI launcher script
+requirements.txt            # Python dependencies
 ```
 
 ## Adding New Features

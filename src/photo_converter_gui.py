@@ -6,6 +6,7 @@ Photo Converter GUI - A graphical interface for the photo converter tool
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
+import subprocess
 from pathlib import Path
 from typing import List, Optional
 import sys
@@ -36,9 +37,28 @@ class PhotoConverterGUI:
         self.resize_width = tk.StringVar()
         self.resize_height = tk.StringVar()
         self.batch_mode = tk.BooleanVar(value=False)
+        self.selected_files = []  # Store multiple selected files
         
         # Create GUI
+        self.create_menu()
         self.create_widgets()
+    
+    def create_menu(self):
+        """Create menu bar"""
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        # Tools menu
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        tools_menu.add_command(label="Install Dependencies", command=self.install_dependencies)
+        tools_menu.add_separator()
+        tools_menu.add_command(label="Check Dependencies", command=self.check_dependencies)
+        
+        # Help menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="About", command=self.show_about)
         
     def create_widgets(self):
         """Create and layout all GUI widgets"""
@@ -65,10 +85,12 @@ class PhotoConverterGUI:
         
         ttk.Entry(input_frame, textvariable=self.input_path, width=50).grid(
             row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 5))
-        ttk.Button(input_frame, text="Browse File", 
-                  command=self.select_input_file).grid(row=0, column=1)
-        ttk.Button(input_frame, text="Browse Folder", 
-                  command=self.select_input_folder).grid(row=0, column=2)
+        ttk.Button(input_frame, text="Single File", 
+                  command=self.select_input_file).grid(row=0, column=1, padx=(2, 2))
+        ttk.Button(input_frame, text="Multiple Files", 
+                  command=self.select_multiple_files).grid(row=0, column=2, padx=(2, 2))
+        ttk.Button(input_frame, text="Folder", 
+                  command=self.select_input_folder).grid(row=0, column=3, padx=(2, 0))
         
         # Output selection
         ttk.Label(main_frame, text="Output:").grid(row=2, column=0, sticky=tk.W, pady=5)
@@ -81,11 +103,16 @@ class PhotoConverterGUI:
         ttk.Button(output_frame, text="Browse", 
                   command=self.select_output).grid(row=0, column=1)
         
-        # Batch mode checkbox
-        ttk.Checkbutton(main_frame, text="Batch Mode (Process folder)", 
+        # Mode info and batch checkbox
+        mode_frame = ttk.Frame(main_frame)
+        mode_frame.grid(row=3, column=1, columnspan=2, sticky=tk.W, pady=10)
+        
+        ttk.Checkbutton(mode_frame, text="Batch Mode (multiple files/folder processing)", 
                        variable=self.batch_mode,
-                       command=self.toggle_batch_mode).grid(
-            row=3, column=1, sticky=tk.W, pady=10)
+                       command=self.toggle_batch_mode).grid(row=0, column=0, sticky=tk.W)
+        
+        self.mode_label = ttk.Label(mode_frame, text="", foreground="blue")
+        self.mode_label.grid(row=0, column=1, sticky=tk.W, padx=(10, 0))
         
         # Options frame
         options_frame = ttk.LabelFrame(main_frame, text="Conversion Options", padding="10")
@@ -172,7 +199,7 @@ class PhotoConverterGUI:
         return sorted(set(formats))
     
     def select_input_file(self):
-        """Select input file"""
+        """Select single input file"""
         filetypes = [
             ("Image files", "*.jpg *.jpeg *.png *.webp *.gif *.bmp *.tiff *.tif *.heic *.heif"),
             ("All files", "*.*")
@@ -180,22 +207,45 @@ class PhotoConverterGUI:
         filename = filedialog.askopenfilename(filetypes=filetypes)
         if filename:
             self.input_path.set(filename)
+            self.selected_files = [filename]
             self.batch_mode.set(False)
+            self.update_mode_display()
+            self.log_message(f"Selected file: {Path(filename).name}")
+    
+    def select_multiple_files(self):
+        """Select multiple input files for batch processing"""
+        filetypes = [
+            ("Image files", "*.jpg *.jpeg *.png *.webp *.gif *.bmp *.tiff *.tif *.heic *.heif"),
+            ("All files", "*.*")
+        ]
+        filenames = filedialog.askopenfilenames(filetypes=filetypes)
+        if filenames:
+            self.selected_files = list(filenames)
+            self.input_path.set(f"{len(filenames)} files selected")
+            self.batch_mode.set(True)
+            self.update_mode_display()
+            self.log_message(f"Selected {len(filenames)} files for batch processing")
     
     def select_input_folder(self):
         """Select input folder for batch processing"""
-        folder = filedialog.askdirectory()
+        folder = filedialog.askdirectory(title="Select folder containing images")
         if folder:
             self.input_path.set(folder)
+            self.selected_files = []
             self.batch_mode.set(True)
+            self.update_mode_display()
+            # Count images in folder for preview
+            image_files = self.converter.get_image_files(Path(folder))
+            self.log_message(f"Selected folder: {Path(folder).name} ({len(image_files)} images found)")
     
     def select_output(self):
         """Select output file or folder"""
         if self.batch_mode.get():
             # Select output folder for batch mode
-            folder = filedialog.askdirectory()
+            folder = filedialog.askdirectory(title="Select output folder")
             if folder:
                 self.output_path.set(folder)
+                self.log_message(f"Output folder: {Path(folder).name}")
         else:
             # Select output file for single file mode
             format_ext = self.selected_format.get()
@@ -203,15 +253,117 @@ class PhotoConverterGUI:
                 (f"{format_ext.upper()} files", f"*.{format_ext}"),
                 ("All files", "*.*")
             ]
-            filename = filedialog.asksaveasfilename(filetypes=filetypes,
-                                                   defaultextension=f".{format_ext}")
+            filename = filedialog.asksaveasfilename(
+                title="Save converted image as",
+                filetypes=filetypes,
+                defaultextension=f".{format_ext}"
+            )
             if filename:
                 self.output_path.set(filename)
+                self.log_message(f"Output file: {Path(filename).name}")
     
     def toggle_batch_mode(self):
         """Toggle between single file and batch mode"""
         # Clear paths when switching modes
         self.output_path.set("")
+        self.update_mode_display()
+    
+    def update_mode_display(self):
+        """Update mode display label"""
+        if self.batch_mode.get():
+            if self.selected_files:
+                self.mode_label.config(text=f"Batch: {len(self.selected_files)} files")
+            else:
+                self.mode_label.config(text="Batch: Folder mode")
+        else:
+            self.mode_label.config(text="Single file mode")
+    
+    def install_dependencies(self):
+        """Install missing dependencies"""
+        def install_worker():
+            try:
+                self.log_message("Installing dependencies...")
+                self.root.after(0, lambda: self.convert_button.config(state='disabled'))
+                
+                # Install basic dependencies
+                self.log_message("Installing basic dependencies: Pillow, click, tqdm")
+                result = subprocess.run([sys.executable, "-m", "pip", "install", 
+                                       "Pillow>=10.0.0", "click>=8.0.0", "tqdm>=4.65.0"], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0:
+                    self.log_message("✓ Basic dependencies installed successfully")
+                else:
+                    self.log_message(f"✗ Error installing basic dependencies: {result.stderr}")
+                
+                # Try to install HEIC support
+                self.log_message("Attempting to install HEIC support (pyheif)...")
+                result = subprocess.run([sys.executable, "-m", "pip", "install", "pyheif>=0.7.1"], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0:
+                    self.log_message("✓ HEIC support (pyheif) installed successfully")
+                    self.log_message("Note: You may need to install system libraries:")
+                    self.log_message("  sudo dnf install libheif-freeworld libheif-tools")
+                else:
+                    self.log_message("✗ HEIC support installation failed")
+                    self.log_message("This is normal if system HEIF libraries are missing")
+                    self.log_message("Install system libraries first: sudo dnf install libheif-devel")
+                
+                self.log_message("Dependency installation completed!")
+                
+            except Exception as e:
+                self.log_message(f"Error during installation: {e}")
+            finally:
+                self.root.after(0, lambda: self.convert_button.config(state='normal'))
+        
+        # Run installation in separate thread
+        install_thread = threading.Thread(target=install_worker, daemon=True)
+        install_thread.start()
+    
+    def check_dependencies(self):
+        """Check which dependencies are available"""
+        self.log_message("\nChecking dependencies...")
+        
+        # Check Pillow
+        try:
+            from PIL import Image
+            self.log_message("✓ Pillow (PIL) - Available")
+        except ImportError:
+            self.log_message("✗ Pillow (PIL) - Missing")
+        
+        # Check click
+        try:
+            import click
+            self.log_message("✓ Click - Available")
+        except ImportError:
+            self.log_message("✗ Click - Missing")
+        
+        # Check tqdm
+        try:
+            import tqdm
+            self.log_message("✓ tqdm - Available")
+        except ImportError:
+            self.log_message("✗ tqdm - Missing")
+        
+        # Check pyheif
+        try:
+            import pyheif
+            self.log_message("✓ pyheif (HEIC support) - Available")
+        except ImportError:
+            self.log_message("✗ pyheif (HEIC support) - Missing")
+        
+        self.log_message("Dependency check completed.\n")
+    
+    def show_about(self):
+        """Show about dialog"""
+        about_text = """Photo Converter GUI v1.0
+        
+A user-friendly interface for converting images between formats.
+
+Supported formats: JPEG, PNG, WebP, GIF, BMP, TIFF, HEIC/HEIF
+Features: Batch processing, quality control, image resizing
+
+Developed with Python and tkinter."""
+        messagebox.showinfo("About Photo Converter", about_text)
     
     def log_message(self, message):
         """Add message to log area"""
@@ -281,7 +433,6 @@ class PhotoConverterGUI:
     def perform_conversion(self):
         """Perform the actual conversion"""
         try:
-            input_path = Path(self.input_path.get())
             output_path = Path(self.output_path.get())
             format_ext = f".{self.selected_format.get()}"
             quality = self.quality.get() if self.quality.get() != 90 else None
@@ -292,20 +443,26 @@ class PhotoConverterGUI:
             self.converter.failed_count = 0
             
             if self.batch_mode.get():
-                # Batch processing
-                self.log_message(f"Processing folder: {input_path}")
+                # Batch processing - either multiple files or folder
+                if self.selected_files:
+                    # Multiple selected files
+                    image_files = [Path(f) for f in self.selected_files]
+                    self.log_message(f"Processing {len(image_files)} selected files")
+                else:
+                    # Folder processing
+                    input_path = Path(self.input_path.get())
+                    self.log_message(f"Processing folder: {input_path}")
+                    image_files = self.converter.get_image_files(input_path)
+                    
+                    if not image_files:
+                        self.log_message("No image files found in the input directory")
+                        return
+                
                 self.log_message(f"Output folder: {output_path}")
                 self.log_message(f"Target format: {format_ext}")
                 
                 # Create output directory
                 output_path.mkdir(parents=True, exist_ok=True)
-                
-                # Get image files
-                image_files = self.converter.get_image_files(input_path)
-                
-                if not image_files:
-                    self.log_message("No image files found in the input directory")
-                    return
                 
                 self.log_message(f"Found {len(image_files)} image files to convert")
                 
@@ -321,6 +478,11 @@ class PhotoConverterGUI:
             
             else:
                 # Single file conversion
+                if self.selected_files:
+                    input_path = Path(self.selected_files[0])
+                else:
+                    input_path = Path(self.input_path.get())
+                    
                 self.log_message(f"Converting: {input_path.name}")
                 self.log_message(f"Output: {output_path}")
                 

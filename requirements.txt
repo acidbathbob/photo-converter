@@ -1,4 +1,11 @@
+# Core dependencies
 Pillow>=10.0.0
 click>=8.0.0
 tqdm>=4.65.0
-pyheif>=0.7.1
+
+# HEIC support (recommended for iPhone photos)
+pillow-heif>=1.1.0
+
+# GUI dependencies
+# tkinter is included with most Python installations
+# If needed on some Linux distributions: sudo dnf install python3-tkinter

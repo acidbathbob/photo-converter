@@ -42,4 +42,12 @@ Thumbs.db
 # Project specific
 output/
 converted_photos/
+converted/
 temp/
+test_images/
+*.converted
+*.backup
+
+# Test files
+/tmp/
+*.test

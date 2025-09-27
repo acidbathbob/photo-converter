@@ -12,12 +12,22 @@ import click
 from PIL import Image
 from tqdm import tqdm
 
-# Import pyheif for HEIC support
+# Import pillow-heif for HEIC support (more compatible than pyheif)
 try:
-    import pyheif
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
     HEIC_SUPPORTED = True
 except ImportError:
-    HEIC_SUPPORTED = False
+    # Fallback to pyheif if available
+    try:
+        import pyheif
+        HEIC_SUPPORTED = True
+        USE_PYHEIF = True
+    except ImportError:
+        HEIC_SUPPORTED = False
+        USE_PYHEIF = False
+else:
+    USE_PYHEIF = False
 
 
 class PhotoConverter:
@@ -49,8 +59,10 @@ class PhotoConverter:
                      quality: Optional[int] = None, resize: Optional[tuple] = None) -> bool:
         """Convert a single image file"""
         try:
-            # Handle HEIC files separately using pyheif
-            if input_path.suffix.lower() in ['.heic', '.heif'] and HEIC_SUPPORTED:
+            # Handle HEIC files - pillow-heif allows direct Image.open() usage
+            if input_path.suffix.lower() in ['.heic', '.heif'] and HEIC_SUPPORTED and USE_PYHEIF:
+                # Fallback to pyheif method if pillow-heif not available
+                import pyheif
                 heif_file = pyheif.read(str(input_path))
                 img = Image.frombytes(
                     heif_file.mode,
@@ -61,6 +73,7 @@ class PhotoConverter:
                     heif_file.stride,
                 )
             else:
+                # For all formats including HEIC (when using pillow-heif)
                 img = Image.open(input_path)
             
             with img:
@@ -129,6 +142,8 @@ def main(input_path: Path, output_path: Path, batch: bool, output: Path,
         click.echo(f"Supported formats: {', '.join(formats_list)}")
         if not HEIC_SUPPORTED:
             click.echo("Note: HEIC support not available. Install pillow-heif for HEIC support.")
+        elif USE_PYHEIF:
+            click.echo("Note: Using pyheif for HEIC support. Consider upgrading to pillow-heif for better compatibility.")
     
     # Parse resize parameter
     resize_dims = None
